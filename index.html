@@ -506,7 +506,10 @@ function clearRoute() {
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
         marker.bindPopup(`<b>${esc(club.name)}</b><br>${esc(club.address || "")}<br><span class="muted">Click to select</span>`);
-        marker.on('click', () => onSelectClub(club));
+        mmarker.on('click', () => {
+  onSelectClub(club);   // existing behavior
+  addClubToRoute(club); // new behavior
+});
         markers.push({marker, club});
         bounds.push([club.lat, club.lng]);
       });
@@ -638,5 +641,6 @@ renderRouteUI();
 </script>
 </body>
 </html>
+
 
 
