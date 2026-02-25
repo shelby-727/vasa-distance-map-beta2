@@ -163,7 +163,7 @@
           Open in Google Maps
         </a>
       </div>
-      <div class="tiny">Tip: click the same pin list-style in the table to zoom; route builds from marker clicks.</div>
+      <div class="tiny">Tip: Route builds from marker clicks. (Search selects only.)</div>
     </div>
 
     <div class="section">
@@ -208,7 +208,7 @@
         <button id="clearLines" class="secondary">Clear lines</button>
         <button id="toggleLabels">Hide labels</button>
       </div>
-      <div class="tiny">Labels appear when zoomed in, and can be toggled.</div>
+      <div class="tiny">Labels appear at zoom 12+, and can be toggled.</div>
     </div>
 
     <div class="section" id="detailsSection">
@@ -256,10 +256,31 @@
     return {lat, lng};
   }
 
+  function setStatus(html) {
+    const el = document.getElementById('statusMsg');
+    if (el) el.innerHTML = html;
+  }
+
+  // Popup: Summary only
+  function popupSummary(club) {
+    const rows = [
+      ["GM", club["GM"]],
+      ["GM Cell", club["GM CELL"]],
+      ["PTL", club["PTL"]],
+    ]
+    .filter(([_, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+    .map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(v)}</div>`)
+    .join("");
+
+    return rows ? `<div style="margin-top:6px; line-height:1.25;">${rows}</div>` : "";
+  }
+
   function kvHtmlAllColumns(obj) {
+    // Show all columns except lat/lng (we already display location elsewhere)
     const skip = new Set(["lat","lng"]);
     const keys = Object.keys(obj || {}).filter(k => !skip.has(k) && obj[k] !== null && obj[k] !== "" && obj[k] !== undefined);
 
+    // Put common ones first, then alphabetical
     const preferred = ["id","name","address"];
     keys.sort((a,b) => {
       const ia = preferred.indexOf(a), ib = preferred.indexOf(b);
@@ -275,11 +296,6 @@
         </div>
       `).join("")
     }</div>`;
-  }
-
-  function setStatus(html) {
-    const el = document.getElementById('statusMsg');
-    if (el) el.innerHTML = html;
   }
 
   // ---------- Map ----------
@@ -305,7 +321,7 @@
 
   // Labels
   let labelsEnabled = true;
-  const labelZoomThreshold = 12;
+  const labelZoomThreshold = 12; // <- you asked for zoom 12
 
   function updateLabels() {
     const z = map.getZoom();
@@ -524,9 +540,12 @@
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
 
-        marker.bindPopup(
-          `<b>${esc(club.name)}</b><br>${esc(club.address || "")}<br><span class="muted">Click to select</span>`
-        );
+        // Popup: summary only (no "Click to select")
+        marker.bindPopup(`
+          <div style="font-weight:900; font-size:16px; margin-bottom:4px;">${esc(club.name)}</div>
+          <div class="muted" style="margin-bottom:6px;">${esc(club.address || "")}</div>
+          ${popupSummary(club)}
+        `);
 
         marker.on('click', () => {
           onSelectClub(club);
@@ -551,6 +570,7 @@
   // ---------- UI wiring ----------
   document.getElementById("routeUndo")?.addEventListener("click", undoRoute);
   document.getElementById("routeClear")?.addEventListener("click", clearRoute);
+  renderRouteUI();
 
   document.getElementById('radius').addEventListener('input', () => {
     if (!selected) return;
