@@ -145,6 +145,25 @@
       <div id="statusMsg" class="toast">Loading clubs.json…</div>
     </div>
 
+    <div style="margin-top:15px; padding-top:10px; border-top:1px solid #ddd;">
+  <div style="font-weight:600; margin-bottom:6px;">Route Builder</div>
+
+  <div id="routeList" class="muted">No stops yet.</div>
+
+  <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+    <button id="routeUndo" type="button">Undo</button>
+    <button id="routeClear" type="button">Clear</button>
+
+    <a id="gmapsLink"
+       href="#"
+       target="_blank"
+       rel="noopener"
+       style="display:none; padding:6px 10px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">
+      Open in Google Maps
+    </a>
+  </div>
+</div>
+    
     <div class="section">
       <h3>Search club</h3>
       <div class="row" style="width:100%;">
@@ -298,6 +317,71 @@
     });
   }
   map.on('zoomend', updateLabels);
+
+  // ===== Route Builder =====
+let routeClubs = [];
+
+function buildGoogleMapsDirectionsUrl(route) {
+  if (route.length < 2) return null;
+
+  const origin = `${route[0].lat},${route[0].lng}`;
+  const destination = `${route[route.length - 1].lat},${route[route.length - 1].lng}`;
+
+  const waypoints = route.length > 2
+    ? route.slice(1, -1).map(c => `${c.lat},${c.lng}`).join('|')
+    : "";
+
+  const params = new URLSearchParams({
+    api: "1",
+    origin,
+    destination
+  });
+
+  if (waypoints) params.set("waypoints", waypoints);
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function renderRouteUI() {
+  const list = document.getElementById("routeList");
+  const link = document.getElementById("gmapsLink");
+  if (!list || !link) return;
+
+  if (routeClubs.length === 0) {
+    list.textContent = "No stops yet.";
+    link.style.display = "none";
+    return;
+  }
+
+  list.innerHTML = routeClubs.map((c, i) => {
+    const label =
+      i === 0 ? "Start" :
+      i === routeClubs.length - 1 ? "Destination" :
+      `Stop ${i}`;
+    return `${label}: <b>${c.name}</b>`;
+  }).join("<br>");
+
+  const url = buildGoogleMapsDirectionsUrl(routeClubs);
+  if (url) {
+    link.href = url;
+    link.style.display = "inline-block";
+  }
+}
+
+function addClubToRoute(club) {
+  routeClubs.push(club);
+  renderRouteUI();
+}
+
+function undoRoute() {
+  routeClubs.pop();
+  renderRouteUI();
+}
+
+function clearRoute() {
+  routeClubs = [];
+  renderRouteUI();
+}
 
   // ---------- Selection + distances ----------
   function clearLines() { lineLayer.clearLayers(); }
@@ -550,3 +634,4 @@
 </script>
 </body>
 </html>
+
