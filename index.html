@@ -145,25 +145,27 @@
       <div id="statusMsg" class="toast">Loading clubs.json…</div>
     </div>
 
-    <div style="margin-top:15px; padding-top:10px; border-top:1px solid #ddd;">
-  <div style="font-weight:600; margin-bottom:6px;">Route Builder</div>
+    <div class="section">
+      <h3>Route builder</h3>
+      <div class="muted">Click 2+ clubs to build a route. First = start, last = destination.</div>
 
-  <div id="routeList" class="muted">No stops yet.</div>
+      <div id="routeList" class="muted" style="margin-top:10px;">No stops yet.</div>
 
-  <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-    <button id="routeUndo" type="button">Undo</button>
-    <button id="routeClear" type="button">Clear</button>
+      <div class="row" style="margin-top:10px;">
+        <button id="routeUndo" type="button" class="secondary">Undo</button>
+        <button id="routeClear" type="button" class="danger">Clear route</button>
 
-    <a id="gmapsLink"
-       href="#"
-       target="_blank"
-       rel="noopener"
-       style="display:none; padding:6px 10px; border:1px solid #ccc; border-radius:6px; text-decoration:none;">
-      Open in Google Maps
-    </a>
-  </div>
-</div>
-    
+        <a id="gmapsLink"
+           href="#"
+           target="_blank"
+           rel="noopener"
+           style="display:none; padding:9px 10px; border:1px solid rgba(255,255,255,0.10); border-radius:12px; text-decoration:none; color:var(--text);">
+          Open in Google Maps
+        </a>
+      </div>
+      <div class="tiny">Tip: click the same pin list-style in the table to zoom; route builds from marker clicks.</div>
+    </div>
+
     <div class="section">
       <h3>Search club</h3>
       <div class="row" style="width:100%;">
@@ -255,11 +257,9 @@
   }
 
   function kvHtmlAllColumns(obj) {
-    // Show ALL columns (every field from clubs.json), except we hide lat/lng and id at the top area already.
     const skip = new Set(["lat","lng"]);
     const keys = Object.keys(obj || {}).filter(k => !skip.has(k) && obj[k] !== null && obj[k] !== "" && obj[k] !== undefined);
 
-    // Put common ones first, then alphabetical
     const preferred = ["id","name","address"];
     keys.sort((a,b) => {
       const ia = preferred.indexOf(a), ib = preferred.indexOf(b);
@@ -278,7 +278,8 @@
   }
 
   function setStatus(html) {
-    document.getElementById('statusMsg').innerHTML = html;
+    const el = document.getElementById('statusMsg');
+    if (el) el.innerHTML = html;
   }
 
   // ---------- Map ----------
@@ -287,6 +288,13 @@
     maxZoom: 18,
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
+
+  // Force Leaflet to use LOCAL marker icons (repo root)
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: './marker-icon-2x.png',
+    iconUrl: './marker-icon.png',
+    shadowUrl: './marker-shadow.png'
+  });
 
   const lineLayer = L.layerGroup().addTo(map);
 
@@ -319,69 +327,72 @@
   map.on('zoomend', updateLabels);
 
   // ===== Route Builder =====
-let routeClubs = [];
+  let routeClubs = [];
 
-function buildGoogleMapsDirectionsUrl(route) {
-  if (route.length < 2) return null;
+  function buildGoogleMapsDirectionsUrl(route) {
+    if (!route || route.length < 2) return null;
 
-  const origin = `${route[0].lat},${route[0].lng}`;
-  const destination = `${route[route.length - 1].lat},${route[route.length - 1].lng}`;
+    const origin = `${route[0].lat},${route[0].lng}`;
+    const destination = `${route[route.length - 1].lat},${route[route.length - 1].lng}`;
+    const waypoints = route.length > 2
+      ? route.slice(1, -1).map(c => `${c.lat},${c.lng}`).join('|')
+      : "";
 
-  const waypoints = route.length > 2
-    ? route.slice(1, -1).map(c => `${c.lat},${c.lng}`).join('|')
-    : "";
+    const params = new URLSearchParams({ api: "1", origin, destination });
+    if (waypoints) params.set("waypoints", waypoints);
 
-  const params = new URLSearchParams({
-    api: "1",
-    origin,
-    destination
-  });
-
-  if (waypoints) params.set("waypoints", waypoints);
-
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
-}
-
-function renderRouteUI() {
-  const list = document.getElementById("routeList");
-  const link = document.getElementById("gmapsLink");
-  if (!list || !link) return;
-
-  if (routeClubs.length === 0) {
-    list.textContent = "No stops yet.";
-    link.style.display = "none";
-    return;
+    return `https://www.google.com/maps/dir/?${params.toString()}`;
   }
 
-  list.innerHTML = routeClubs.map((c, i) => {
-    const label =
-      i === 0 ? "Start" :
-      i === routeClubs.length - 1 ? "Destination" :
-      `Stop ${i}`;
-    return `${label}: <b>${c.name}</b>`;
-  }).join("<br>");
+  function renderRouteUI() {
+    const list = document.getElementById("routeList");
+    const link = document.getElementById("gmapsLink");
+    if (!list || !link) return;
 
-  const url = buildGoogleMapsDirectionsUrl(routeClubs);
-  if (url) {
-    link.href = url;
-    link.style.display = "inline-block";
+    if (routeClubs.length === 0) {
+      list.textContent = "No stops yet.";
+      link.style.display = "none";
+      link.href = "#";
+      return;
+    }
+
+    list.innerHTML = routeClubs.map((c, i) => {
+      const label =
+        i === 0 ? "Start" :
+        i === routeClubs.length - 1 ? "Destination" :
+        `Stop ${i}`;
+      return `${label}: <b>${esc(c.name)}</b>`;
+    }).join("<br>");
+
+    const url = buildGoogleMapsDirectionsUrl(routeClubs);
+    if (url) {
+      link.href = url;
+      link.style.display = "inline-block";
+    } else {
+      link.style.display = "none";
+      link.href = "#";
+    }
   }
-}
 
-function addClubToRoute(club) {
-  routeClubs.push(club);
-  renderRouteUI();
-}
+  function addClubToRoute(club) {
+    // avoid duplicates (optional). remove if you want repeats.
+    const key = club.id ?? `${club.name}|${club.lat}|${club.lng}`;
+    const exists = routeClubs.some(c => (c.id ?? `${c.name}|${c.lat}|${c.lng}`) === key);
+    if (exists) return;
 
-function undoRoute() {
-  routeClubs.pop();
-  renderRouteUI();
-}
+    routeClubs.push(club);
+    renderRouteUI();
+  }
 
-function clearRoute() {
-  routeClubs = [];
-  renderRouteUI();
-}
+  function undoRoute() {
+    routeClubs.pop();
+    renderRouteUI();
+  }
+
+  function clearRoute() {
+    routeClubs = [];
+    renderRouteUI();
+  }
 
   // ---------- Selection + distances ----------
   function clearLines() { lineLayer.clearLayers(); }
@@ -399,17 +410,19 @@ function clearRoute() {
   }
 
   function renderDistances(fromLat, fromLng, titleHtml) {
-    const radiusMiles = Number(document.getElementById('radius').value || 0);
+    const radiusMiles = Number(document.getElementById('radius')?.value || 0);
 
     const rows = clubs
       .map(c => ({club: c, miles: haversineMiles(fromLat, fromLng, c.lat, c.lng)}))
       .sort((a,b) => a.miles - b.miles)
       .filter(x => radiusMiles <= 0 ? true : x.miles <= radiusMiles);
 
-    document.getElementById('selected').innerHTML = titleHtml;
+    const selectedEl = document.getElementById('selected');
+    if (selectedEl) selectedEl.innerHTML = titleHtml;
 
     const tbody = document.querySelector('#results tbody');
     tbody.innerHTML = "";
+
     rows.forEach(({club, miles}) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -434,7 +447,8 @@ function clearRoute() {
   function onSelectClub(club, fromList=false) {
     selected = club;
     selectedType = "club";
-    document.getElementById('modeLabel').textContent = "Club";
+    const modeLabel = document.getElementById('modeLabel');
+    if (modeLabel) modeLabel.textContent = "Club";
 
     const titleHtml = `<div><b>Selected club:</b> ${esc(club.name)}</div><div class="muted">${esc(club.address || "")}</div>`;
     document.getElementById('details').style.display = "block";
@@ -453,7 +467,8 @@ function clearRoute() {
   function setCustomPoint(lat, lng, label) {
     selectedType = "custom";
     selected = { name: label || "Custom point", lat, lng };
-    document.getElementById('modeLabel').textContent = "Custom point";
+    const modeLabel = document.getElementById('modeLabel');
+    if (modeLabel) modeLabel.textContent = "Custom point";
 
     if (customMarker) map.removeLayer(customMarker);
     customMarker = L.circleMarker([lat, lng], { radius: 9, weight: 2, opacity: 0.9, fillOpacity: 0.35 }).addTo(map);
@@ -490,20 +505,17 @@ function clearRoute() {
     return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
   }
 
-  L.Icon.Default.mergeOptions({
-  iconRetinaUrl: './marker-icon-2x.png',
-  iconUrl: './marker-icon.png',
-  shadowUrl: './marker-shadow.png'
-});
-  
   // ---------- Load clubs ----------
-  fetch('clubs.json')
+  fetch('./clubs.json')
     .then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     })
     .then(data => {
-      clubs = (data || []).filter(c => typeof c.lat === "number" && typeof c.lng === "number");
+      // tolerate string lat/lng
+      clubs = (data || [])
+        .map(c => ({...c, lat: Number(c.lat), lng: Number(c.lng)}))
+        .filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lng));
 
       document.getElementById('clubCount').textContent = String(clubs.length);
       setStatus(`<strong>Loaded.</strong> Click a club, search, or set a custom point.`);
@@ -511,17 +523,23 @@ function clearRoute() {
       const bounds = [];
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
-        marker.bindPopup(`<b>${esc(club.name)}</b><br>${esc(club.address || "")}<br><span class="muted">Click to select</span>`);
-        mmarker.on('click', () => {
-  onSelectClub(club);   // existing behavior
-  addClubToRoute(club); // new behavior
-});
-        markers.push({marker, club});
+
+        marker.bindPopup(
+          `<b>${esc(club.name)}</b><br>${esc(club.address || "")}<br><span class="muted">Click to select</span>`
+        );
+
+        marker.on('click', () => {
+          onSelectClub(club);
+          addClubToRoute(club);
+        });
+
+        markers.push({ marker, club });
         bounds.push([club.lat, club.lng]);
       });
 
       if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
       updateLabels();
+      renderRouteUI();
     })
     .catch(err => {
       console.error(err);
@@ -531,13 +549,18 @@ function clearRoute() {
     });
 
   // ---------- UI wiring ----------
+  document.getElementById("routeUndo")?.addEventListener("click", undoRoute);
+  document.getElementById("routeClear")?.addEventListener("click", clearRoute);
+
   document.getElementById('radius').addEventListener('input', () => {
     if (!selected) return;
     if (selectedType === "club") {
-      renderDistances(selected.lat, selected.lng, `<div><b>Selected club:</b> ${esc(selected.name)}</div><div class="muted">${esc(selected.address || "")}</div>`);
+      renderDistances(selected.lat, selected.lng,
+        `<div><b>Selected club:</b> ${esc(selected.name)}</div><div class="muted">${esc(selected.address || "")}</div>`);
       drawLinesToNearest(selected.lat, selected.lng, 10);
     } else {
-      renderDistances(selected.lat, selected.lng, `<div><b>Selected point:</b> ${esc(selected.name)}</div><div class="muted">${selected.lat.toFixed(5)}, ${selected.lng.toFixed(5)}</div>`);
+      renderDistances(selected.lat, selected.lng,
+        `<div><b>Selected point:</b> ${esc(selected.name)}</div><div class="muted">${selected.lat.toFixed(5)}, ${selected.lng.toFixed(5)}</div>`);
       drawLinesToNearest(selected.lat, selected.lng, 10);
     }
   });
@@ -637,17 +660,10 @@ function clearRoute() {
     document.getElementById('details').style.display = "none";
     document.getElementById('summary').innerHTML = "";
     document.getElementById('results').style.display = "none";
-    document.getElementById("routeUndo")?.addEventListener("click", undoRoute);
-document.getElementById("routeClear")?.addEventListener("click", clearRoute);
-renderRouteUI();
-    
+
     clearLines();
     setStatus(`<strong>Cleared.</strong> Click a club, search, or set a custom point.`);
   });
 </script>
 </body>
 </html>
-
-
-
-
