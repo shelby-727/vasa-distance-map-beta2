@@ -135,50 +135,16 @@
       </div>
       <div class="badge">BETA</div>
     </div>
-    
-<div id="status" class="muted" style="margin-top:10px;"></div>
-
-    <div class="section" id="routeSection">
-  <h3>Route builder</h3>
-  <div class="muted">Click 2+ clubs to build a route. First = start, last = destination.</div>
-
-  <div id="routeList" class="muted" style="margin-top:10px;">No stops yet.</div>
-
-  <div class="row" style="margin-top:10px;">
-    <button id="routeUndo" class="secondary">Undo</button>
-    <button id="routeClear" class="danger">Clear route</button>
-
-    <a id="gmapsLink"
-       href="#"
-       target="_blank"
-       rel="noopener"
-       style="display:none; padding:9px 10px; border:1px solid rgba(255,255,255,0.10); border-radius:12px; text-decoration:none;">
-      Open in Google Maps
-    </a>
-  </div>
-
-  <div class="tiny" style="margin-top:10px;">
-    Tip: you can keep using the Distance Finder normally—this just adds a route link.
-  </div>
-</div>
 
     <div class="section">
-  <h3>Custom start point</h3>
+      <h3>Status</h3>
+      <div class="row">
+        <div class="pill">Clubs loaded: <strong id="clubCount">0</strong></div>
+        <div class="pill">Mode: <strong id="modeLabel">Click a club</strong></div>
+      </div>
+      <div id="statusMsg" class="toast">Loading clubs.json…</div>
+    </div>
 
-  <div class="row">
-    <input id="customName" type="text" placeholder="Label (optional)" />
-  </div>
-
-  <div class="row">
-    <input id="customLat" type="number" step="any" placeholder="Latitude" />
-    <input id="customLng" type="number" step="any" placeholder="Longitude" />
-  </div>
-
-  <div class="row">
-    <button id="addCustomBtn">Add point</button>
-  </div>
-</div>
-    
     <div class="section">
       <h3>Search club</h3>
       <div class="row" style="width:100%;">
@@ -194,8 +160,13 @@
       <div class="muted">Distances from a non-club location.</div>
 
       <div class="row" style="margin-top:10px;">
+        <input id="customLatLng" style="flex:1 1 300px;" placeholder="Enter lat,lng (example: 40.7608,-111.8910)"/>
+        <button id="setLatLng">Set</button>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
         <input id="customAddress" style="flex:1 1 300px;" placeholder="Or enter an address to geocode"/>
-        <button id="geocodeAddress">Go</button>
+        <button id="geocodeAddress">Geocode</button>
       </div>
 
       <div class="row" style="margin-top:10px;">
@@ -214,6 +185,9 @@
         <span class="muted">Within (miles):</span>
         <input id="radius" type="number" min="0" step="5" value="0" />
         <button id="clearLines" class="secondary">Clear lines</button>
+        <button id="toggleLabels">Hide labels</button>
+      </div>
+      <div class="tiny">Labels appear when zoomed in, and can be toggled.</div>
     </div>
 
     <div class="section" id="detailsSection">
@@ -325,79 +299,6 @@
   }
   map.on('zoomend', updateLabels);
 
-// ---------- Route builder ----------
-let routeClubs = []; // ordered list of selected clubs for route
-
-function routeKey(c) {
-  return c.id ?? `${c.name}|${c.lat}|${c.lng}`;
-}
-
-function buildGoogleMapsDirectionsUrl(route) {
-  // Uses Google Maps Directions URL format:
-  // https://www.google.com/maps/dir/?api=1&origin=...&destination=...&waypoints=...
-  if (!route || route.length < 2) return null;
-
-  const origin = `${route[0].lat},${route[0].lng}`;
-  const destination = `${route[route.length - 1].lat},${route[route.length - 1].lng}`;
-  const waypoints = route.length > 2
-    ? route.slice(1, -1).map(c => `${c.lat},${c.lng}`).join('|')
-    : "";
-
-  const params = new URLSearchParams({ api: "1", origin, destination });
-  if (waypoints) params.set("waypoints", waypoints);
-
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
-}
-
-function renderRouteUI() {
-  const list = document.getElementById("routeList");
-  const link = document.getElementById("gmapsLink");
-  if (!list || !link) return;
-
-  if (routeClubs.length === 0) {
-    list.innerHTML = "No stops yet.";
-    link.style.display = "none";
-    link.href = "#";
-    return;
-  }
-
-  list.innerHTML = routeClubs.map((c, i) => {
-    const label =
-      i === 0 ? "Start" :
-      i === routeClubs.length - 1 ? "Destination" :
-      `Stop ${i}`;
-    return `${label}: <b>${esc(c.name)}</b>`;
-  }).join("<br>");
-
-  const url = buildGoogleMapsDirectionsUrl(routeClubs);
-  if (url) {
-    link.href = url;
-    link.style.display = "inline-block";
-  } else {
-    link.style.display = "none";
-    link.href = "#";
-  }
-}
-
-function addClubToRoute(club) {
-  // Prevent duplicates (remove this if you WANT duplicates)
-  const k = routeKey(club);
-  if (routeClubs.some(x => routeKey(x) === k)) return;
-
-  routeClubs.push(club);
-  renderRouteUI();
-}
-
-function undoRoute() {
-  routeClubs.pop();
-  renderRouteUI();
-}
-
-function clearRoute() {
-  routeClubs = [];
-  renderRouteUI();
-}
-  
   // ---------- Selection + distances ----------
   function clearLines() { lineLayer.clearLayers(); }
 
@@ -521,10 +422,7 @@ function clearRoute() {
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
         marker.bindPopup(`<b>${esc(club.name)}</b><br>${esc(club.address || "")}<br><span class="muted">Click to select</span>`);
-        marker.on('click', () => {
-  onSelectClub(club);     // keep your current behavior
-  addClubToRoute(club);   // add this club to Google Maps route
-});
+        marker.on('click', () => onSelectClub(club));
         markers.push({marker, club});
         bounds.push([club.lat, club.lng]);
       });
@@ -646,14 +544,9 @@ function clearRoute() {
     document.getElementById('details').style.display = "none";
     document.getElementById('summary').innerHTML = "";
     document.getElementById('results').style.display = "none";
-    document.getElementById("routeUndo")?.addEventListener("click", undoRoute);
-    document.getElementById("routeClear")?.addEventListener("click", clearRoute);
-renderRouteUI();
     clearLines();
     setStatus(`<strong>Cleared.</strong> Click a club, search, or set a custom point.`);
   });
 </script>
 </body>
 </html>
-
-
