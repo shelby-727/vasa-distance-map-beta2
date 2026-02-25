@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>VASA Clubs — Executive Distance Map</title>
+  <title>VASA Clubs — Distance Finder</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet -->
@@ -70,7 +70,6 @@
       padding: 9px 10px;
       outline: none;
     }
-    input::placeholder { color: rgba(107,114,128,0.8); }
 
     button {
       cursor:pointer;
@@ -156,33 +155,24 @@
 
     <div class="panel" id="sidePanel">
       <div class="header">
-        <div class="h-title">VASA Club Coverage Map</div>
-        <div class="h-sub">Click a club pin to view coverage radius and nearby clubs.</div>
+        <div class="h-title">VASA Distance Finder</div>
+        <div class="h-sub">Click a club pin to see distances to nearby clubs.</div>
       </div>
 
       <div class="section">
-        <h3>Coverage</h3>
+        <h3>Distance options</h3>
         <div class="row">
-          <span class="muted">Radius (miles):</span>
-          <input id="radius" type="number" min="0" step="5" value="50" />
-          <button id="clearLines" class="secondary" type="button">Clear</button>
+          <span class="muted">Within (miles):</span>
+          <input id="radius" type="number" min="0" step="5" value="0" />
+          <button id="clearLines" class="secondary" type="button">Clear lines</button>
           <button id="toggleLabels" type="button">Hide labels</button>
         </div>
-        <div class="row" style="margin-top:10px;">
-          <span class="pill">Labels at zoom <strong>12+</strong></span>
-          <span class="pill">Lines: <strong>nearest 10</strong></span>
-        </div>
+        <div class="muted" style="margin-top:8px;">Club labels show at zoom 12+.</div>
       </div>
 
       <div class="section">
         <h3>Selected club</h3>
         <div id="selected" class="muted">No club selected yet.</div>
-
-        <div class="row" style="margin-top:10px;">
-          <span id="kpiWithin" class="pill" style="display:none;">Within radius: <strong>0</strong></span>
-          <span id="kpiNearest" class="pill" style="display:none;">Nearest: <strong>—</strong></span>
-        </div>
-
         <div id="summary" class="muted" style="margin-top:10px;"></div>
 
         <table id="results" style="display:none;">
@@ -220,11 +210,6 @@
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  function getRadiusMiles() {
-    const v = Number(document.getElementById('radius').value || 0);
-    return Number.isFinite(v) ? Math.max(0, v) : 0;
-  }
-
   // ---------- Map ----------
   const map = L.map('map').setView([39.5, -98.35], 4);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -244,27 +229,6 @@
   let clubs = [];
   let markers = []; // {marker, club}
   let selectedClub = null;
-
-  // Coverage circle
-  let radiusCircle = null;
-
-  function drawRadiusCircle(lat, lng, miles) {
-    const m = Number(miles || 0);
-    if (radiusCircle) {
-      map.removeLayer(radiusCircle);
-      radiusCircle = null;
-    }
-    if (!m || m <= 0) return;
-
-    const meters = m * 1609.34;
-    radiusCircle = L.circle([lat, lng], {
-      radius: meters,
-      color: '#2563eb',
-      weight: 2,
-      opacity: 0.85,
-      fillOpacity: 0.08
-    }).addTo(map);
-  }
 
   // Labels
   let labelsEnabled = true;
@@ -289,16 +253,10 @@
   }
   map.on('zoomend', updateLabels);
 
-  function clearVisuals() {
-    lineLayer.clearLayers();
-    if (radiusCircle) {
-      map.removeLayer(radiusCircle);
-      radiusCircle = null;
-    }
-  }
+  function clearLines() { lineLayer.clearLayers(); }
 
   function drawLinesToNearest(limit = 10) {
-    lineLayer.clearLayers();
+    clearLines();
     if (!selectedClub) return;
 
     const sorted = clubs
@@ -318,40 +276,21 @@
   function renderDistances() {
     if (!selectedClub) return;
 
-    const radiusMiles = getRadiusMiles();
+    const radiusMiles = Number(document.getElementById('radius').value || 0);
 
-    const allRows = clubs
+    const rows = clubs
       .filter(c => c !== selectedClub)
       .map(c => ({club: c, miles: haversineMiles(selectedClub.lat, selectedClub.lng, c.lat, c.lng)}))
-      .sort((a,b) => a.miles - b.miles);
+      .sort((a,b) => a.miles - b.miles)
+      .filter(x => radiusMiles <= 0 ? true : x.miles <= radiusMiles);
 
-    const rows = radiusMiles > 0
-      ? allRows.filter(x => x.miles <= radiusMiles)
-      : allRows;
-
-    // Selected summary (exec-friendly)
     document.getElementById('selected').innerHTML =
       `<div><b>${esc(selectedClub.name)}</b></div>
        <div class="muted">${esc(selectedClub.address || "")}</div>`;
 
-    // KPIs
-    const kpiWithin = document.getElementById('kpiWithin');
-    const kpiNearest = document.getElementById('kpiNearest');
-    if (kpiWithin) {
-      kpiWithin.style.display = selectedClub ? "inline-flex" : "none";
-      kpiWithin.innerHTML = `Within radius: <strong>${rows.length}</strong>`;
-    }
-    if (kpiNearest) {
-      const nearest = allRows[0];
-      kpiNearest.style.display = nearest ? "inline-flex" : "none";
-      kpiNearest.innerHTML = nearest
-        ? `Nearest: <strong>${esc(nearest.club.name)} (${nearest.miles.toFixed(1)} mi)</strong>`
-        : `Nearest: <strong>—</strong>`;
-    }
-
-    // Table
     const tbody = document.querySelector('#results tbody');
     tbody.innerHTML = "";
+
     rows.forEach(({club, miles}) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -367,12 +306,7 @@
 
     document.getElementById('results').style.display = "table";
     document.getElementById('summary').innerHTML =
-      radiusMiles > 0
-        ? `Showing <b>${rows.length}</b> clubs within <b>${radiusMiles}</b> miles of the selected club.`
-        : `Showing <b>${rows.length}</b> clubs (all clubs) from the selected club.`;
-
-    // Visuals
-    drawRadiusCircle(selectedClub.lat, selectedClub.lng, radiusMiles);
+      `Showing <b>${rows.length}</b> clubs ${radiusMiles > 0 ? `within <b>${radiusMiles}</b> miles` : "(all clubs)"} of the selected club.`;
   }
 
   // ---------- Mobile drawer ----------
@@ -397,13 +331,13 @@
   function onSelectClub(club) {
     selectedClub = club;
 
-    // open panel on mobile so the “exec view” appears immediately
     if (window.matchMedia("(max-width: 820px)").matches) {
       panel?.classList.add("open");
     }
 
     renderDistances();
     drawLinesToNearest(10);
+
     map.setView([club.lat, club.lng], Math.max(map.getZoom(), 11));
   }
 
@@ -448,16 +382,8 @@
     });
 
   // ---------- UI wiring ----------
-  document.getElementById('radius').addEventListener('input', () => {
-    if (!selectedClub) return;
-    renderDistances();
-    drawLinesToNearest(10);
-  });
-
-  document.getElementById('clearLines').addEventListener('click', () => {
-    clearVisuals();
-    document.getElementById('results').style.display = selectedClub ? "table" : "none";
-  });
+  document.getElementById('radius').addEventListener('input', () => renderDistances());
+  document.getElementById('clearLines').addEventListener('click', clearLines);
 
   document.getElementById('toggleLabels').addEventListener('click', () => {
     labelsEnabled = !labelsEnabled;
