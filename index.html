@@ -490,6 +490,12 @@ function clearRoute() {
     return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
   }
 
+  L.Icon.Default.mergeOptions({
+  iconRetinaUrl: './marker-icon-2x.png',
+  iconUrl: './marker-icon.png',
+  shadowUrl: './marker-shadow.png'
+});
+  
   // ---------- Load clubs ----------
   fetch('clubs.json')
     .then(r => {
@@ -641,6 +647,7 @@ renderRouteUI();
 </script>
 </body>
 </html>
+
 
 
 
