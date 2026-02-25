@@ -135,6 +135,8 @@
       </div>
       <div class="badge">BETA</div>
     </div>
+    
+<div id="status" class="muted" style="margin-top:10px;"></div>
 
     <div class="section" id="routeSection">
   <h3>Route builder</h3>
@@ -160,6 +162,23 @@
   </div>
 </div>
 
+    <div class="section">
+  <h3>Custom start point</h3>
+
+  <div class="row">
+    <input id="customName" type="text" placeholder="Label (optional)" />
+  </div>
+
+  <div class="row">
+    <input id="customLat" type="number" step="any" placeholder="Latitude" />
+    <input id="customLng" type="number" step="any" placeholder="Longitude" />
+  </div>
+
+  <div class="row">
+    <button id="addCustomBtn">Add point</button>
+  </div>
+</div>
+    
     <div class="section">
       <h3>Search club</h3>
       <div class="row" style="width:100%;">
@@ -636,4 +655,5 @@ renderRouteUI();
 </script>
 </body>
 </html>
+
 
