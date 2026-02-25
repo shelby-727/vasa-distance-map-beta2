@@ -356,6 +356,7 @@
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
 
+        // Popup includes MT (from "MAINTENANCE TECH") and MT Phone (from "MT Phone")
         marker.bindPopup(`
           <div style="font-weight:900; font-size:16px; margin-bottom:4px;">${esc(club.name)}</div>
           <div class="muted" style="margin-bottom:6px;">${esc(club.address || "")}</div>
@@ -363,8 +364,8 @@
           ${fieldLine("GM", club["GM"])}
           ${fieldLine("GM Cell", club["GM CELL"])}
           ${fieldLine("MEL", club["MEL"])}
-          ${fieldLine("MT", club["MT"])}
-          ${fieldLine("MT Cell", club["MT CELL"])}
+          ${fieldLine("MT", club["MAINTENANCE TECH"])}
+          ${fieldLine("MT Phone", club["MT Phone"])}
         `);
 
         marker.on('click', () => onSelectClub(club));
