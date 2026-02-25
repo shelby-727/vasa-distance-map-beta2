@@ -628,10 +628,15 @@ function clearRoute() {
     document.getElementById('details').style.display = "none";
     document.getElementById('summary').innerHTML = "";
     document.getElementById('results').style.display = "none";
+    document.getElementById("routeUndo")?.addEventListener("click", undoRoute);
+document.getElementById("routeClear")?.addEventListener("click", clearRoute);
+renderRouteUI();
+    
     clearLines();
     setStatus(`<strong>Cleared.</strong> Click a club, search, or set a custom point.`);
   });
 </script>
 </body>
 </html>
+
 
