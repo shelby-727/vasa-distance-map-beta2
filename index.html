@@ -104,6 +104,7 @@
     th { color: var(--muted); font-weight: 700; }
     tr:hover { background: rgba(37,99,235,0.06); cursor:pointer; }
 
+    /* Mobile drawer */
     .hamburger{
       position: fixed;
       top: 12px;
@@ -155,7 +156,7 @@
     <div class="panel" id="sidePanel">
       <div class="header">
         <div class="h-title">VASA Distance Finder</div>
-        <div class="h-sub">Click a club pin to see distances. Click multiple pins to build a route.</div>
+        <div class="h-sub">Click pins to build a route (click again to remove). Red line = route.</div>
       </div>
 
       <div class="section">
@@ -175,7 +176,7 @@
           </a>
         </div>
 
-        <div class="smallNote">Tip: Click Club 1, then Club 2, then Club 3… The link updates automatically.</div>
+        <div class="smallNote">Tip: Click Club 1 → Club 2 → Club 3… Link updates automatically.</div>
       </div>
 
       <div class="section">
@@ -228,7 +229,6 @@
   }
 
   function clubKey(club){
-    // stable-ish key for dedupe
     return String(club.id ?? `${club.name}|${club.lat}|${club.lng}`);
   }
 
@@ -239,21 +239,67 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Local marker icons in repo root (prevents CDN image weirdness)
+  // Local marker icons
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: './marker-icon-2x.png',
     iconUrl: './marker-icon.png',
     shadowUrl: './marker-shadow.png'
   });
 
+  // Blue nearest lines (optional)
   const lineLayer = L.layerGroup().addTo(map);
 
+  // Route highlights + route line (RED)
+  const routeLayer = L.layerGroup().addTo(map);
+
   let clubs = [];
-  let markers = []; // {marker, club}
   let selectedClub = null;
 
   // ---------- Route Builder ----------
   let routeClubs = [];
+  let routeLine = null;
+  let routeHighlights = new Map(); // key -> circleMarker
+
+  function setRouteHighlight(club, on) {
+    const key = clubKey(club);
+
+    if (on) {
+      if (routeHighlights.has(key)) return;
+      const ring = L.circleMarker([club.lat, club.lng], {
+        radius: 10,
+        weight: 4,
+        opacity: 0.95,
+        fillOpacity: 0.15
+      });
+      ring.setStyle({ color: "red", fillColor: "red" });
+      ring.addTo(routeLayer);
+      routeHighlights.set(key, ring);
+    } else {
+      const ring = routeHighlights.get(key);
+      if (ring) {
+        routeLayer.removeLayer(ring);
+        routeHighlights.delete(key);
+      }
+    }
+  }
+
+  function drawRouteLine() {
+    if (routeLine) {
+      routeLayer.removeLayer(routeLine);
+      routeLine = null;
+    }
+    if (routeClubs.length < 2) return;
+
+    const latlngs = routeClubs.map(c => [c.lat, c.lng]);
+    routeLine = L.polyline(latlngs, {
+      weight: 6,
+      opacity: 0.9,
+      lineJoin: "round",
+      lineCap: "round"
+    });
+    routeLine.setStyle({ color: "red" });
+    routeLine.addTo(routeLayer);
+  }
 
   function buildGoogleMapsDirectionsUrl(route) {
     if (route.length < 2) return null;
@@ -286,7 +332,7 @@
         i === 0 ? "Start" :
         i === routeClubs.length - 1 ? "Destination" :
         `Stop ${i}`;
-      return `${label}: <b>${esc(c.name)}</b>`;
+      return `🔴 ${label}: <b>${esc(c.name)}</b>`;
     }).join("<br>");
 
     const url = buildGoogleMapsDirectionsUrl(routeClubs);
@@ -298,45 +344,40 @@
     }
   }
 
-  function addClubToRoute(club) {
-    // prevent accidental double-add if you click the same pin twice in a row
-    const last = routeClubs[routeClubs.length - 1];
-    if (last && clubKey(last) === clubKey(club)) return;
+  function toggleClubInRoute(club) {
+    const key = clubKey(club);
+    const idx = routeClubs.findIndex(c => clubKey(c) === key);
 
-    routeClubs.push(club);
+    if (idx >= 0) {
+      // remove (de-select)
+      routeClubs.splice(idx, 1);
+      setRouteHighlight(club, false);
+    } else {
+      // add
+      routeClubs.push(club);
+      setRouteHighlight(club, true);
+    }
+
     renderRouteUI();
+    drawRouteLine();
   }
 
   function undoRoute() {
-    routeClubs.pop();
+    const removed = routeClubs.pop();
+    if (removed) setRouteHighlight(removed, false);
     renderRouteUI();
+    drawRouteLine();
   }
 
   function clearRoute() {
+    routeClubs.forEach(c => setRouteHighlight(c, false));
     routeClubs = [];
     renderRouteUI();
+    drawRouteLine();
   }
 
   // ---------- Distances ----------
   function clearLines() { lineLayer.clearLayers(); }
-
-  function drawLinesToNearest(limit = 10) {
-    clearLines();
-    if (!selectedClub) return;
-
-    const sorted = clubs
-      .filter(c => clubKey(c) !== clubKey(selectedClub))
-      .map(c => ({club: c, miles: haversineMiles(selectedClub.lat, selectedClub.lng, c.lat, c.lng)}))
-      .sort((a,b) => a.miles - b.miles)
-      .slice(0, limit);
-
-    sorted.forEach(({club}) => {
-      L.polyline([[selectedClub.lat, selectedClub.lng],[club.lat, club.lng]], {
-        weight: 2,
-        opacity: 0.55
-      }).addTo(lineLayer);
-    });
-  }
 
   function renderDistances() {
     if (!selectedClub) return;
@@ -399,8 +440,6 @@
     }
 
     renderDistances();
-    drawLinesToNearest(10);
-
     map.setView([club.lat, club.lng], Math.max(map.getZoom(), 11));
   }
 
@@ -420,7 +459,7 @@
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
 
-        // Popup: only shows the fields you care about (no $ junk)
+        // Popup: ONLY fields you want (prevents $ junk)
         marker.bindPopup(`
           <div style="font-weight:900; font-size:16px; margin-bottom:4px;">${esc(club.name)}</div>
           <div class="muted" style="margin-bottom:10px;">${esc(club.address || "")}</div>
@@ -434,10 +473,9 @@
 
         marker.on('click', () => {
           onSelectClub(club);
-          addClubToRoute(club);
+          toggleClubInRoute(club); // click again removes
         });
 
-        markers.push({ marker, club });
         bounds.push([club.lat, club.lng]);
       });
 
@@ -455,7 +493,10 @@
   document.getElementById("routeUndo").addEventListener("click", undoRoute);
   document.getElementById("routeClear").addEventListener("click", clearRoute);
 
-  // Start with panel open on desktop, closed on mobile
+  // Expose for inline safety (not required but fine)
+  window.undoRoute = undoRoute;
+  window.clearRoute = clearRoute;
+
   renderRouteUI();
 </script>
 </body>
