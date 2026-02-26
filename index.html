@@ -18,6 +18,7 @@
       --muted:#6b7280;
       --line:rgba(17,24,39,0.12);
       --accent:#2563eb;
+      --danger:#dc2626;
       --shadow: 0 10px 28px rgba(0,0,0,.12);
       --radius: 14px;
       --font: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -43,7 +44,7 @@
       padding: 10px 12px;
       border:1px solid var(--line);
       border-radius: var(--radius);
-      background: rgba(255,255,255,0.90);
+      background: rgba(255,255,255,0.95);
       margin-bottom: 12px;
     }
     .h-title { font-weight:900; letter-spacing:.2px; font-size:14px; }
@@ -54,14 +55,14 @@
       padding: 12px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: rgba(255,255,255,0.92);
+      background: rgba(255,255,255,0.95);
     }
     .section h3 { margin:0 0 8px; font-size:13px; letter-spacing:.2px; }
 
     .muted { color:var(--muted); font-size:12px; }
     .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 
-    input, button {
+    input, button, a.btnlink {
       font-family: var(--font);
       border-radius: 12px;
       border: 1px solid var(--line);
@@ -69,6 +70,11 @@
       color: var(--text);
       padding: 9px 10px;
       outline: none;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
 
     button {
@@ -79,6 +85,7 @@
     }
     button:hover { background: rgba(37,99,235,0.16); }
     button.secondary { background: #fff; border-color: var(--line); color: var(--text); }
+    button.danger { background: rgba(220,38,38,0.10); border-color: rgba(220,38,38,0.30); }
 
     .pill {
       display:inline-flex; gap:6px; align-items:center;
@@ -96,17 +103,6 @@
     th, td { text-align:left; padding: 9px 8px; border-bottom: 1px solid rgba(17,24,39,0.10); font-size: 12px; vertical-align: top; }
     th { color: var(--muted); font-weight: 700; }
     tr:hover { background: rgba(37,99,235,0.06); cursor:pointer; }
-
-    .label-tooltip {
-      background: rgba(255,255,255,0.92);
-      border: 1px solid rgba(17,24,39,0.18);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 2px 8px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
-      font-weight: 800;
-      font-size: 11px;
-    }
 
     .hamburger{
       position: fixed;
@@ -144,6 +140,9 @@
         transform: translateX(0);
       }
     }
+
+    .routeStops { margin-top: 6px; line-height: 1.5; }
+    .smallNote { font-size: 11px; color: var(--muted); margin-top: 6px; }
   </style>
 </head>
 
@@ -156,7 +155,27 @@
     <div class="panel" id="sidePanel">
       <div class="header">
         <div class="h-title">VASA Distance Finder</div>
-        <div class="h-sub">Click a club pin to see distances to nearby clubs.</div>
+        <div class="h-sub">Click a club pin to see distances. Click multiple pins to build a route.</div>
+      </div>
+
+      <div class="section">
+        <h3>Route Builder</h3>
+        <div id="routeList" class="muted routeStops">No stops yet.</div>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="routeUndo" type="button" class="secondary">Undo</button>
+          <button id="routeClear" type="button" class="danger">Clear</button>
+
+          <a id="gmapsLink" class="btnlink"
+             href="#"
+             target="_blank"
+             rel="noopener"
+             style="display:none;">
+            Open in Google Maps
+          </a>
+        </div>
+
+        <div class="smallNote">Tip: Click Club 1, then Club 2, then Club 3… The link updates automatically.</div>
       </div>
 
       <div class="section">
@@ -165,9 +184,7 @@
           <span class="muted">Within (miles):</span>
           <input id="radius" type="number" min="0" step="5" value="0" />
           <button id="clearLines" class="secondary" type="button">Clear lines</button>
-          <button id="toggleLabels" type="button">Hide labels</button>
         </div>
-        <div class="muted" style="margin-top:8px;">Club labels show at zoom 12+.</div>
       </div>
 
       <div class="section">
@@ -210,6 +227,11 @@
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
+  function clubKey(club){
+    // stable-ish key for dedupe
+    return String(club.id ?? `${club.name}|${club.lat}|${club.lng}`);
+  }
+
   // ---------- Map ----------
   const map = L.map('map').setView([39.5, -98.35], 4);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -217,7 +239,7 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Use LOCAL Leaflet marker icons (repo root)
+  // Local marker icons in repo root (prevents CDN image weirdness)
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: './marker-icon-2x.png',
     iconUrl: './marker-icon.png',
@@ -230,29 +252,72 @@
   let markers = []; // {marker, club}
   let selectedClub = null;
 
-  // Labels
-  let labelsEnabled = true;
-  const labelZoomThreshold = 12;
+  // ---------- Route Builder ----------
+  let routeClubs = [];
 
-  function updateLabels() {
-    const z = map.getZoom();
-    markers.forEach(({marker, club}) => {
-      if (!labelsEnabled || z < labelZoomThreshold) {
-        marker.unbindTooltip();
-        return;
-      }
-      if (!marker.getTooltip()) {
-        marker.bindTooltip(esc(club.name), {
-          permanent: true,
-          direction: "top",
-          offset: [0, -10],
-          className: "label-tooltip"
-        });
-      }
-    });
+  function buildGoogleMapsDirectionsUrl(route) {
+    if (route.length < 2) return null;
+
+    const origin = `${route[0].lat},${route[0].lng}`;
+    const destination = `${route[route.length - 1].lat},${route[route.length - 1].lng}`;
+
+    const waypoints = route.length > 2
+      ? route.slice(1, -1).map(c => `${c.lat},${c.lng}`).join('|')
+      : "";
+
+    const params = new URLSearchParams({ api: "1", origin, destination });
+    if (waypoints) params.set("waypoints", waypoints);
+
+    return `https://www.google.com/maps/dir/?${params.toString()}`;
   }
-  map.on('zoomend', updateLabels);
 
+  function renderRouteUI() {
+    const list = document.getElementById("routeList");
+    const link = document.getElementById("gmapsLink");
+
+    if (routeClubs.length === 0) {
+      list.textContent = "No stops yet.";
+      link.style.display = "none";
+      return;
+    }
+
+    list.innerHTML = routeClubs.map((c, i) => {
+      const label =
+        i === 0 ? "Start" :
+        i === routeClubs.length - 1 ? "Destination" :
+        `Stop ${i}`;
+      return `${label}: <b>${esc(c.name)}</b>`;
+    }).join("<br>");
+
+    const url = buildGoogleMapsDirectionsUrl(routeClubs);
+    if (url) {
+      link.href = url;
+      link.style.display = "inline-flex";
+    } else {
+      link.style.display = "none";
+    }
+  }
+
+  function addClubToRoute(club) {
+    // prevent accidental double-add if you click the same pin twice in a row
+    const last = routeClubs[routeClubs.length - 1];
+    if (last && clubKey(last) === clubKey(club)) return;
+
+    routeClubs.push(club);
+    renderRouteUI();
+  }
+
+  function undoRoute() {
+    routeClubs.pop();
+    renderRouteUI();
+  }
+
+  function clearRoute() {
+    routeClubs = [];
+    renderRouteUI();
+  }
+
+  // ---------- Distances ----------
   function clearLines() { lineLayer.clearLayers(); }
 
   function drawLinesToNearest(limit = 10) {
@@ -260,7 +325,7 @@
     if (!selectedClub) return;
 
     const sorted = clubs
-      .filter(c => c !== selectedClub)
+      .filter(c => clubKey(c) !== clubKey(selectedClub))
       .map(c => ({club: c, miles: haversineMiles(selectedClub.lat, selectedClub.lng, c.lat, c.lng)}))
       .sort((a,b) => a.miles - b.miles)
       .slice(0, limit);
@@ -279,7 +344,7 @@
     const radiusMiles = Number(document.getElementById('radius').value || 0);
 
     const rows = clubs
-      .filter(c => c !== selectedClub)
+      .filter(c => clubKey(c) !== clubKey(selectedClub))
       .map(c => ({club: c, miles: haversineMiles(selectedClub.lat, selectedClub.lng, c.lat, c.lng)}))
       .sort((a,b) => a.miles - b.miles)
       .filter(x => radiusMiles <= 0 ? true : x.miles <= radiusMiles);
@@ -324,9 +389,7 @@
   syncPanelForScreen();
   window.addEventListener("resize", syncPanelForScreen);
 
-  toggleBtn?.addEventListener("click", () => {
-    panel?.classList.toggle("open");
-  });
+  toggleBtn?.addEventListener("click", () => panel?.classList.toggle("open"));
 
   function onSelectClub(club) {
     selectedClub = club;
@@ -353,29 +416,32 @@
         .filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lng));
 
       const bounds = [];
+
       clubs.forEach(club => {
         const marker = L.marker([club.lat, club.lng]).addTo(map);
 
-        // Popup includes MT (from "MAINTENANCE TECH") and MT Phone (from "MT Phone")
+        // Popup: only shows the fields you care about (no $ junk)
         marker.bindPopup(`
           <div style="font-weight:900; font-size:16px; margin-bottom:4px;">${esc(club.name)}</div>
-          <div class="muted" style="margin-bottom:6px;">${esc(club.address || "")}</div>
+          <div class="muted" style="margin-bottom:10px;">${esc(club.address || "")}</div>
 
           ${fieldLine("GM", club["GM"])}
           ${fieldLine("GM Cell", club["GM CELL"])}
           ${fieldLine("MEL", club["MEL"])}
           ${fieldLine("MT", club["MAINTENANCE TECH"])}
-          $${fieldLine("MT Phone", club["MT PHONE"])}
+          ${fieldLine("MT Phone", club["MT PHONE"])}
         `);
 
-        marker.on('click', () => onSelectClub(club));
+        marker.on('click', () => {
+          onSelectClub(club);
+          addClubToRoute(club);
+        });
 
         markers.push({ marker, club });
         bounds.push([club.lat, club.lng]);
       });
 
       if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
-      updateLabels();
     })
     .catch(err => {
       console.error(err);
@@ -386,12 +452,11 @@
   document.getElementById('radius').addEventListener('input', () => renderDistances());
   document.getElementById('clearLines').addEventListener('click', clearLines);
 
-  document.getElementById('toggleLabels').addEventListener('click', () => {
-    labelsEnabled = !labelsEnabled;
-    document.getElementById('toggleLabels').textContent = labelsEnabled ? "Hide labels" : "Show labels";
-    updateLabels();
-  });
+  document.getElementById("routeUndo").addEventListener("click", undoRoute);
+  document.getElementById("routeClear").addEventListener("click", clearRoute);
+
+  // Start with panel open on desktop, closed on mobile
+  renderRouteUI();
 </script>
 </body>
 </html>
-
